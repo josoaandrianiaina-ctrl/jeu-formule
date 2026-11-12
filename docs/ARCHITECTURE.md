@@ -2,33 +2,48 @@
 
 Projet : **Formula Racing Ultra 3D** — jeu de course de monoplaces en 3D pour mobile.
 
-Statut : proposition de Claude, à vérifier par ChatGPT et à valider par Josoa.
+Statut : proposition de Claude, révisée après la revue de ChatGPT sur la PR n°1.
 Rien n'est encore construit. Ce document ne décrit aucun code existant.
 
 ---
 
 ## 1. Décision ouverte n°1 : le moteur
 
-Le cahier des charges initial demande Unreal Engine 5. Il demande aussi du code
-« réellement compilable » et interdit de « prétendre avoir testé sans test réel ».
-Ces deux exigences se contredisent pour Claude : voir `RISQUES.md`, R1 à R4.
+C'est une décision produit. Elle revient à Josoa et se prend **après** un essai
+sur téléphone (étape 1 de la feuille de route), pas avant.
 
-| | Option A — Three.js + Rapier (web) | Option B — Unreal Engine 5 |
+### Question préalable : quel livrable ?
+
+| Livrable | Conséquence |
+|---|---|
+| Une application distribuée sur le Play Store et l'App Store | Oriente vers l'option B |
+| Un jeu ouvert par une adresse web, installable sur l'écran d'accueil | Oriente vers l'option A |
+
+### Critères
+
+| Critère | Option A — Three.js + Rapier (web) | Option B — Unreal Engine 5 |
 |---|---|---|
-| Claude peut compiler | Oui | Non |
-| Claude peut tester | Oui : physique en tests automatiques, rendu en navigateur sans écran | Non : Josoa compile et rapporte les erreurs |
-| Android | Oui, par le navigateur | Oui, avec Android Studio sur le PC de Josoa |
-| iPhone | Oui, par le navigateur | Mac avec Xcode obligatoire pour un projet C++ |
-| Installation côté Josoa | Aucune | Unreal, Visual Studio, Android Studio |
-| Gyroscope | Oui, sur page HTTPS hors appli Claude | Oui |
-| Niveau graphique atteignable | Propre et lisible, pas « console » | Élevé, mais dépend de modèles 3D d'artistes |
-| Publication sur les stores | Non (possible plus tard par encapsulation) | Oui |
+| Livrable | Page web, installable sur l'écran d'accueil | Application Android et iOS |
+| Publication sur les stores | Non. Encapsulation possible en principe ; coûts non évalués | Oui |
+| Plafond graphique | Limité par WebGL 2 sur mobile | Plus élevé ; rendu mobile avec compromis selon l'appareil |
+| Qui compile et teste | Claude, à chaque modification | Josoa, sur son PC, à chaque modification |
+| Matériel côté Josoa | Un téléphone | PC puissant ; Mac avec Xcode pour l'iPhone |
+| Comptes payants | Aucun | Compte développeur Apple pour l'iPhone |
+| Premier essai sur téléphone | Dès l'étape 1 | Après installation d'Unreal et des outils Android |
+| Modèles 3D | Générés par code, ou fichiers GLB | Fichiers d'artistes attendus pour le niveau visé |
 
-**Recommandation de Claude : option A.** C'est la seule où chaque ligne de code
-est exécutée et testée avant d'arriver dans le dépôt.
+Contrainte à connaître : Claude ne peut pas compiler Unreal, et ChatGPT n'a pas
+indiqué pouvoir le faire. En option B, la règle du projet « ne jamais prétendre
+avoir testé sans test réel » impose que chaque test passe par le PC de Josoa.
 
-Le reste de ce document décrit l'option A. Si l'option B est retenue, la
-section 3 (systèmes) reste valable ; les sections 2 et 6 sont à réécrire.
+### Essai comparatif avant décision
+
+Défini à l'étape 1 de `FEUILLE-DE-ROUTE.md` : même contenu minimal, même
+téléphone, fluidité mesurée. La décision s'appuie sur ces mesures et sur le
+livrable voulu.
+
+Le reste de ce document décrit l'option A. Si l'option B est retenue, les
+sections 3 et 4 restent valables ; les sections 2 et 6 sont à réécrire.
 
 ---
 
@@ -36,7 +51,7 @@ section 3 (systèmes) reste valable ; les sections 2 et 6 sont à réécrire.
 
 | Rôle | Outil | Version vérifiée le 12/11/2026 |
 |---|---|---|
-| Rendu 3D | Three.js (WebGL) | 0.187.0 |
+| Rendu 3D | Three.js (WebGL 2) | 0.187.0 |
 | Physique | Rapier 3D, paquet `@dimforge/rapier3d-compat` (WebAssembly) | 0.21.0 |
 | Langage | TypeScript | à fixer à l'étape 1 |
 | Assemblage | Vite | à fixer à l'étape 1 |
@@ -45,9 +60,10 @@ section 3 (systèmes) reste valable ; les sections 2 et 6 sont à réécrire.
 | Modèles 3D | Générés par code au départ ; fichiers GLB (Blender) possibles ensuite | — |
 
 Vérifié réellement : les deux versions ci-dessus sont celles publiées sur npm, et
-Rapier 0.21.0 expose bien un contrôleur de véhicule (`createVehicleController`)
-avec, par roue : suspension (raideur, compression, détente, débattement, force
-maximale), force moteur, frein, braquage, adhérence longitudinale et latérale.
+Rapier 0.21.0 se charge sous Node.
+
+Les performances de rendu ne se déduisent pas d'un test sur PC : elles sont
+mesurées sur les téléphones cibles.
 
 ---
 
@@ -60,7 +76,7 @@ noyau. Aucun système n'est « simulé par une animation ».
 src/
   noyau/        boucle à pas fixe, état global, événements
   physique/     véhicule : châssis, roues, pneus, aéro, moteur, freins
-  circuit/      spline 3D, maillage de piste, collisions, secteurs, stands
+  circuit/      générateur, spline 3D, maillage, collisions, secteurs, stands
   voiture/      modèle 3D, roues et volant animés depuis la physique
   ia/           trajectoire, freinage, dépassement, niveaux de difficulté
   course/       sessions, règles, pénalités, pneus, stands, météo
@@ -74,33 +90,38 @@ docs/
 ```
 
 ### 3.1 Noyau
-- Physique à pas fixe (120 Hz visé), rendu à la fréquence de l'écran, interpolation entre les deux.
+- Physique à pas fixe (1/120 s), rendu à la fréquence de l'écran, interpolation entre les deux.
 - La physique ne dépend jamais du rendu : elle tourne aussi sous Node pour les tests.
 
 ### 3.2 Physique du véhicule
-| Élément | Méthode |
-|---|---|
-| Châssis | Corps rigide Rapier, masse et inertie réglables |
-| Suspensions | Quatre rayons indépendants (contrôleur de véhicule Rapier) |
-| Gravité et pentes | Gravité du monde physique ; aucun traitement spécial des montées et descentes |
-| Transfert de masse | Résulte du corps rigide et des suspensions ; mesuré par les forces de suspension |
-| Pneus | Adhérence dépendant de la charge, du glissement, de la température et de l'usure |
-| Aérodynamique | Appui et traînée proportionnels au carré de la vitesse ; DRS = traînée réduite |
-| Moteur et boîte | Courbe de couple, rapports, passage automatique |
-| Freins | Répartition avant/arrière, ABS par limitation du glissement |
-| Antipatinage | Limitation du couple selon le glissement des roues motrices |
-| Collisions et dégâts | Contacts Rapier ; les dégâts modifient l'aéro, la direction ou la puissance |
+Spécification complète dans [`PHYSIQUE.md`](PHYSIQUE.md) : répartition des
+rôles avec Rapier, paramètres, équations, scénarios de validation chiffrés.
 
-Limite assumée : le modèle de pneu sera une approximation paramétrique, pas un
-modèle de simulateur professionnel. Il sera documenté avec ses paramètres.
+Points clés :
+- Rapier intègre le châssis et détecte les contacts. Les forces de suspension, de pneu, de moteur, de frein et d'aérodynamique viennent du code du projet.
+- Le contrôleur de véhicule intégré à Rapier n'est pas utilisé, pour qu'un seul modèle d'adhérence commande les forces.
+- Le transfert de charge apparaît dans les forces de suspension. Il n'est considéré comme validé qu'après comparaison à la valeur théorique (tests V5 et V6), et le comportement des pneus qu'après les tests V4, V7 et V8.
+- L'ABS et l'antipatinage sont des régulateurs définis sur le glissement, avec seuils et fréquence (section 4.7 de `PHYSIQUE.md`).
 
 ### 3.3 Circuits
-- Trajectoire : spline 3D fermée (points X, Y, Z), avec largeur et dévers par section.
-- Maillage de piste, vibreurs et zones de dégagement générés depuis la spline.
+Un générateur minimal existe **dès le premier circuit**. Aucune piste n'est dessinée à la main.
+
+- Entrées : graine aléatoire, longueur, nombre de virages, dénivelé maximal, largeur.
+- Même graine, même circuit : le générateur est déterministe.
+- Tracé en plan : points de contrôle répartis autour d'un centre, à distance variable, ce qui exclut les croisements.
+- Profil vertical : somme de quelques ondulations périodiques, donc raccordé par construction.
+- Dévers : fonction de la courbure.
+- Courbe : spline cubique périodique.
+- Contrôles automatiques à chaque génération :
+  - continuité de la position, de la tangente et de la courbure à la jonction ;
+  - continuité du profil vertical et de la pente à la jonction ;
+  - pente maximale et rayon de courbure minimal respectés ;
+  - aucun croisement de la piste ;
+  - longueur dans la tolérance.
+- Maillage de piste, vibreurs et zones de dégagement produits depuis la spline.
 - Collision : maillage triangulé pour la piste, volumes simples pour barrières et murs.
-- Données de course portées par la spline : ligne de départ, trois secteurs, zones DRS, voie des stands, trajectoire idéale et points de freinage.
-- Générateur paramétrable (longueur, nombre de virages, dénivelé, graine aléatoire), puis éditeur.
-- Décor : relief, tribunes, stands, barrières ; chargé selon la distance.
+- Données de course portées par la spline : ligne de départ, trois secteurs, zones DRS, voie des stands, trajectoire idéale, points de freinage.
+- Plus tard : générateur étendu (épingles, chicanes, styles) puis éditeur.
 
 ### 3.4 Voitures
 - Monoplaces originales, sans marque ni écurie réelle.
@@ -128,7 +149,8 @@ Voir section 4.
 ### 3.8 Performances mobiles
 - Résolution dynamique, niveaux de détail, ombres selon l'appareil.
 - Quatre profils : ultra, élevé, moyen, économie.
-- Les fréquences d'image visées restent des objectifs tant qu'elles ne sont pas mesurées sur un téléphone réel.
+- Un compteur de fluidité intégré enregistre la moyenne et le 1 % le plus lent.
+- Chaque étape de la feuille de route a une porte de validation sur téléphone.
 
 ---
 
@@ -153,7 +175,7 @@ Voir section 4.
 - Mini-carte à gauche, au-dessus du frein ; bouton caméra sous le chrono.
 - Accélération en bouton, avec option automatique dans le menu.
 - Direction tactile en repli si le gyroscope est indisponible.
-- Quatre circuits inventés : Valmora (rapide), Port-Azur (urbain), Forêt-Noire (vallonné), Al-Sahra (désert, de nuit). Premier circuit conseillé : Forêt-Noire, pour valider les pentes.
+- Quatre styles de circuits, obtenus par réglage du générateur : rapide, urbain, vallonné, désert de nuit. Premier style conseillé : vallonné, pour valider les pentes.
 
 ---
 
@@ -177,5 +199,5 @@ Règles :
 ## 6. Déploiement (option A)
 
 - Chaque fusion dans `main` reconstruit le jeu et le publie sur GitHub Pages.
-- Adresse HTTPS publique, ouvrable sur Android et iPhone.
+- Adresse HTTPS publique, ouvrable sur Android et iPhone, installable sur l'écran d'accueil.
 - Le gyroscope demande une page HTTPS et, sur iPhone, une autorisation donnée par un appui de l'utilisateur. Un bouton « Activer l'inclinaison » est prévu.

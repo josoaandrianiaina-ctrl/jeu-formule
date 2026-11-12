@@ -7,14 +7,15 @@
 ## Documents
 
 - [Architecture technique](docs/ARCHITECTURE.md)
+- [Modèle physique](docs/PHYSIQUE.md)
 - [Risques et dépendances](docs/RISQUES.md)
 - [Feuille de route](docs/FEUILLE-DE-ROUTE.md)
 
 ## Décisions en attente
 
-1. Moteur : Three.js + Rapier (web) ou Unreal Engine 5.
-2. Premier circuit.
-3. Premier appareil de test.
+1. Livrable : application sur les stores, ou jeu ouvert par une adresse web.
+2. Appareils de référence et seuils de fluidité.
+3. Moteur : Three.js + Rapier ou Unreal Engine 5, après l'essai sur téléphone.
 
 ## Qui fait quoi
 
