@@ -1,0 +1,20 @@
+import RAPIER from '@dimforge/rapier3d-compat';
+import { Vehicule, GROUPE } from '../src/physique/vehicule.js';
+import { VOITURE, G, PAS } from '../src/config.js';
+await RAPIER.init();
+const monde = new RAPIER.World({x:0,y:-G,z:0}); monde.timestep = PAS;
+monde.createCollider(RAPIER.ColliderDesc.cuboid(200,0.5,30000).setTranslation(0,-0.5,-29000).setCollisionGroups((GROUPE.sol<<16)|0xffff));
+const v = new Vehicule(RAPIER, monde, {});
+monde.step();
+const cmd={gaz:0,frein:0,volant:0};
+let t=0;
+function sim(dur, f){ const n=Math.round(dur/PAS); for(let i=0;i<n;i++){ v.pas(PAS,cmd); monde.step(); t+=PAS; if(f) f(i);} }
+sim(3);
+console.log('repos: Fz', v.roues.map(r=>r.Fz.toFixed(0)).join(' '), 'attendu', v.roues.map(r=>r.FzStat.toFixed(0)).join(' '), 'v', v.tel.vitesse.toExponential(2), 'y', v.corps.translation().y.toFixed(4));
+cmd.gaz=1; const jal={100:null,200:null,300:null}; const t0=t;
+sim(40, ()=>{ const k=v.tel.vitesse*3.6; for(const j in jal) if(jal[j]===null && k>=+j) jal[j]=(t-t0).toFixed(2); });
+console.log('accel 0-100/200/300 s', JSON.stringify(jal), 'v apres 40s km/h', (v.tel.vitesse*3.6).toFixed(1), 'rapport', v.tel.rapport, 'regime', v.tel.regime.toFixed(0), 'x derive', v.corps.translation().x.toFixed(3));
+sim(30); console.log('vmax km/h', (v.tel.vitesse*3.6).toFixed(1), 'Fz', v.roues.map(r=>r.Fz.toFixed(0)).join(' '), 'comp mm', v.roues.map(r=>((r.comp-r.compStat)*1000).toFixed(1)).join(' '));
+cmd.gaz=0; cmd.frein=1; const z0=v.corps.translation().z; let z300=null,z100=null,t300,t100, aMax=0, bloc=0;
+sim(8, ()=>{ const k=v.tel.vitesse*3.6; const z=v.corps.translation().z; if(z300===null && k<=300){z300=z;t300=t;} if(z100===null && k<=100){z100=z;t100=t;} aMax=Math.min(aMax,v.tel.aLong); if(v.roues.some(r=>r.kappa<-0.5)&&k>20) bloc++; });
+console.log('freinage 300-100: dist m', (z300-z100).toFixed(1), 'duree s', (t100-t300).toFixed(2), 'decel max g', (aMax/G).toFixed(2), 'pas avec blocage', bloc, 'v fin', v.tel.vitesse.toFixed(3));
